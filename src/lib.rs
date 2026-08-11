@@ -48,7 +48,7 @@ impl<B> Eq for Key<B> {}
 
 impl<B> PartialOrd for Key<B> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.internal.partial_cmp(&other.internal)
+        Some(self.cmp(other))
     }
 }
 
@@ -74,7 +74,7 @@ const SBO_BITS: usize = (SBO_LEN - 1).ilog2() as usize + 1;
 const SBO_BITS_MASK: u8 = !(u8::MAX << SBO_BITS);
 
 // Make sure the header align is big enough to fit the SBO bits.
-const _: () = const { assert!(2usize.pow(SBO_BITS as u32) - 1 < align_of::<Header>()) };
+const _: () = const { assert!((1usize << SBO_BITS) - 1 < align_of::<Header>()) };
 
 type SBOBuffer = [u8; SBO_LEN];
 
@@ -100,9 +100,9 @@ impl<B> Key<B> {
         let end = 1 + bytes.len();
 
         let mut encoded = 0usize.to_le_bytes();
-        encoded[1..end].copy_from_slice(&bytes);
+        encoded[1..end].copy_from_slice(bytes);
 
-        encoded[0] = bytes.len() as u8;
+        encoded[0] = u8::try_from(bytes.len()).expect("SBO byte length must fit in u8");
 
         Self {
             internal: usize::from_le_bytes(encoded),
@@ -110,7 +110,7 @@ impl<B> Key<B> {
         }
     }
 
-    pub(crate) fn get(&self) -> KeyCow {
+    pub(crate) const fn get(self) -> KeyCow {
         if self.internal & SBO_BITS_MASK as usize != 0 {
             let [flags, bytes @ ..] = self.internal.to_le_bytes();
 
@@ -172,10 +172,17 @@ pub struct Interner<B> {
     set: hashbrown::HashTable<Key<B>>,
 }
 
+impl<B> Default for Interner<B> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<B> Interner<B> {
     /// Create a new [`Interner`].
     ///
     /// This uses hashbrown's default fold hasher.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             buffer: Vec::new(),
@@ -189,7 +196,7 @@ impl<B> Interner<B> {
             Inline { len: u8, bytes: [u8; 7] },
             Ref(&'a [u8]),
         }
-        impl<'a> AsRef<[u8]> for BufferCow<'a> {
+        impl AsRef<[u8]> for BufferCow<'_> {
             fn as_ref(&self) -> &[u8] {
                 match self {
                     BufferCow::Inline { len, bytes } => &bytes[..*len as usize],
@@ -202,9 +209,9 @@ impl<B> Interner<B> {
             KeyCow::Inline { len, bytes } => BufferCow::Inline { len, bytes },
             KeyCow::ByteOffset(offset) => unsafe {
                 let start = buffer.as_ptr();
-                let keyed = start.byte_offset(offset as isize);
+                let keyed = start.byte_add(offset);
                 let len = keyed.as_ref().unwrap().size;
-                let byte_start = keyed.offset(1).cast::<u8>();
+                let byte_start = keyed.add(1).cast::<u8>();
 
                 BufferCow::Ref(std::slice::from_raw_parts(byte_start, len))
             },
@@ -241,7 +248,7 @@ impl<B> Interner<B> {
             let start = buffer.len();
             buffer.resize(buffer.len() + num_byte_chunks, Header { size: 0 });
             unsafe {
-                let writer = buffer.as_mut_ptr().offset(start as isize).cast::<u8>();
+                let writer = buffer.as_mut_ptr().add(start).cast::<u8>();
                 writer.copy_from(bytes.as_ptr(), bytes.len());
             }
 
@@ -251,6 +258,7 @@ impl<B> Interner<B> {
     }
 
     /// Get the underlying bytes that a key represents.
+    #[must_use]
     pub fn get(&self, key: Key<B>) -> impl AsRef<[u8]> {
         Self::get_internal(&self.buffer, key)
     }
@@ -281,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "offset.is_multiple_of(align_of::<Header>())")]
     fn key_from_unaligned_offset() {
         let _ = Key::<()>::from_byte_offset(1);
     }
@@ -290,7 +298,7 @@ mod tests {
     fn key_from_bytes() {
         let fill: SBOBuffer = std::array::repeat(u8::MAX - 1);
         let key = Key::<()>::from_bytes(&fill);
-        assert!(key.internal & SBO_LEN == 7);
+        assert_eq!(key.internal & SBO_LEN, 7);
         assert_eq!(
             key.internal,
             usize::from_le_bytes([
@@ -308,13 +316,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "bytes.len() <= SBO_LEN")]
     fn key_from_many_bytes() {
         let _ = Key::<()>::from_bytes(&[0; 100]);
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "!bytes.is_empty()")]
     fn key_from_empty_bytes() {
         let _ = Key::<()>::from_bytes(&[]);
     }

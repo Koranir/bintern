@@ -1,6 +1,6 @@
 [package]
 name = "bintern"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Daniel Yoon <daniel@yoon.com.au>"]
 edition = "2024"
 description = "Simple byte slice interning"
