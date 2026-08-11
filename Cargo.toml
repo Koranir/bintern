@@ -1,7 +1,14 @@
 [package]
 name = "bintern"
 version = "0.1.0"
+authors = ["Daniel Yoon <daniel@yoon.com.au>"]
 edition = "2024"
+description = "Simple byte slice interning"
+readme = "README.md"
+repository = "https://github.com/Koranir/bintern"
+license = "MIT OR Apache-2.0"
+keywords = ["intern", "interner"]
+categories = ["data-structures"]
 
 [dependencies]
 hashbrown = "0.17.1"
