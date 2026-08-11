@@ -1,4 +1,4 @@
-//! `bintern` - Simple byte slice interning for Rust.
+//! # `bintern` - Simple byte slice interning for Rust.
 //!
 //! An interner takes a string of bytes and returns a canonical handle to it (local to the interner).
 //!
@@ -143,6 +143,7 @@ struct Header {
 /// All identical strings are mapped to the *exact same* handle, effectively allowing for quick comparisons and copy semantics on the *handle* to map onto those same operations on the underlying bytes, regardless of their size or value.
 ///
 /// Said handles are [`Key`]s, and can be used by the [`Interner`] to return back a reference to the bytes when needed.
+///
 /// # Examples
 ///
 /// ```rust
